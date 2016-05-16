@@ -1,7 +1,7 @@
 #cs ----------------------------------------------------------------------------
 
  AutoIt Version: 3.3.14.2
- Author:         Robert Spiller
+ Author:         BillNyeTheScienceGuy
 
  Script Function:
 	Displays Outlook calendar appointments on a Dream Cheeky LED message board 
