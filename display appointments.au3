@@ -5,7 +5,12 @@
 
  Script Function:
 	Displays Outlook calendar appointments on a Dream Cheeky LED message board 
-	using the LED Panel Controller program made by Tiago Rodrigues.
+	using the LED Panel Controller program made by Tiago Rodrigues.  Also 
+	displays unread messages using a hotkey (ctrl + alt + u).
+	
+	This script runs better in conjunction with "taskbar activator.au3", which 
+	activates the taskbar when mousing over it, allowing for regular use of the 
+	taskbar thumbnail preview and taskbar right-clicking.
 	
 	NOTE: Script must be in the same directory as the LED Panel Controller 
 	executable file.
@@ -13,9 +18,7 @@
 #ce ----------------------------------------------------------------------------
 
 ; Script Start - Add your code below here
-#include <Date.au3>      ; for _DateDiff and _DateAdd
-#include <ExtMsgBox.au3> ; for _ExtMsgBoxSet and _ExtMsgBox
-#include <Misc.au3>      ; for _IsPressed
+#include <Date.au3>      ; for _DateDiff, _DateAdd, and _NowCalc
 #include <Outlook.au3>   ; for _OutlookOpen and _OutlookGetAppointments
 #include <String.au3>    ; for _StringInsert
 
@@ -54,8 +57,6 @@ Func eventIsHappening($sStart, $sEnd)
 		$bAtOrBeforeEnd = True
 	EndIf
 	
-	; MsgBox(1, "", $sStart & ", " & $sEnd & "; " & $bAtOrAfterStart & ", " & $bAtOrBeforeEnd)
-	
 	; Return True iff current time is [start, end]
 	If $bAtOrAfterStart And $bAtOrBeforeEnd Then
 		Return True
@@ -71,14 +72,17 @@ EndFunc
 ;                   LEDDisplayControllerGui.exe must be in the C: drive
 ; Return Value(s):  None
 Func postMessage($sMessage)
-	Local $iMillisecondsPerCharacter = 400
+	Local $iMessageGapTime = 1000 ; in milliseconds
+	Local $iMillisecondsPerCharacter = 400 ; in milliseconds
 	Local $iCharactersInString = StringLen($sMessage)
+	;Local $iSpecialCharactersInString = StringLen(StringRegExpReplace($sMessage, "[\w\h]", "")) ; Needs more work for specific characters
 	
 	; -SetRepeatCount and -DeleteMsgAfterRepeat don't work, so the Sleep function and -DeleteRegex is necessary
 	Run("LedDisplayControllerGui.exe -NoServer -NoGui -SetRepeatCount 1 -DeleteMsgAfterRepeat 1 -SendText """ & $sMessage & """")
-	Local $iWaitTime = $iMillisecondsPerCharacter*$iCharactersInString
+	Local $iWaitTime = $iMillisecondsPerCharacter*($iCharactersInString); + 1/2*$iSpecialCharactersInString)
 	Sleep($iWaitTime)
 	Run("LedDisplayControllerGui.exe -NoServer -NoGui -DeleteRegex """"")
+	Sleep($iMessageGapTime)
 EndFunc
 
 ; Function Name..:  loadAppointments()
@@ -91,50 +95,6 @@ Func loadAppointments(ByRef $aAppointments)
 	Local $oOutlook = _OutlookOpen()
 	Local $sDate = @YEAR & "-" & @MON & "-" & @MDAY ; current date in YYYY-MM-DD format
 	$aAppointments = _OutlookGetAppointments($oOutlook, "", $sDate & " 00:00", _DateAdd('d', 1, $sDate) & " 00:00", "", 2, "")
-EndFunc
-
-; Function Name..:  loadNewMessages()
-; Description....:  Open an outlook object and put all unread mail details in the passed array
-; Syntax.........:  loadNewMessages($aMessages)
-; Parameter(s)...:  $aMessages - Array to place unread mail details in
-; Requirement(s).:  Outlook UDF (https://www.autoitscript.com/forum/topic/89321-outlook-udf/)
-; Return Value(s):  None
-Func loadUnreadMessages(ByRef $aMessages)
-	Local $oOutlook = _OutlookOpen()
-	$aMessages = _OutlookGetMail($oOutlook, $olFolderInbox, False, "", "", "", "", "", "", True)
-EndFunc
-
-; Function Name..:  listNewMessages()
-; Description....:  Display unread Outlook messages in a basic message box
-; Syntax.........:  listNewMessages()
-; Parameter(s)...:  None
-; Requirement(s).:  None
-; Return Value(s):  None
-Func listUnreadMessages()
-	Local $aMessages
-	loadUnreadMessages($aMessages)
-	
-	If $aMessages[0][1] == 0 Then
-		MsgBox(1, "Unread Mail", "No unread messages")
-	Else
-		Local $iLongestNameLength = 0
-		Local $sMessage = "Unread mail:" & @LF
-		
-		; Find longest name length for formatting purposes
-		For $i = 1 To $aMessages[0][1]
-			If $iLongestNameLength < StringLen($aMessages[$i][0]) Then
-				$iLongestNameLength = StringLen($aMessages[$i][0])
-			EndIf
-		Next
-		
-		; Adds together name and subject strings with space padding for different sized names
-		For $i = 1 To $aMessages[0][1]
-			$sMessage = $sMessage & @LF & "- " & $aMessages[$i][0] & _StringRepeat(" ", $iLongestNameLength - StringLen($aMessages[$i][0])) & " -> " & $aMessages[$i][7] ; add sender and subject to new line
-		Next
-		
-		_ExtMsgBoxSet(-1, -1, -1, -1, -1, "Courier New")
-		_ExtMsgBox(0, 0, "Unread Mail", $sMessage)
-	EndIf
 EndFunc
 
 ; Function Name..:  forceQuitAllProcesses()
@@ -166,10 +126,8 @@ Func restartScript()
     Exit
 EndFunc
 
-Local $aAppointments;, $aMessages, $iNumberOfUnreadMessages
-Local $iMessageGapTime = 1000 ; in milliseconds
+Local $aAppointments
 
-HotKeySet("^!u", "listUnreadMessages") ; set Ctrl + Alt + U as the hotkey to list unread messages
 HotKeySet("^!r", "restartScript") ; set Ctrl + Alt + R as the hotkey to restart the script
 
 ; Quit all previous controller processes, then start LED Controller app server with no GUI
@@ -180,22 +138,12 @@ Run("LedDisplayControllerGui.exe -NoGui") ; start controller server with no GUI
 ; Loops through the appointments and displays all the ones currently taking place
 While True
 	
-	; loadUnreadMessages($aMessages)
-	
-	; If $iNumberOfUnreadMessages < $aMessages[0][1] Then
-		; $iNumberOfUnreadMessages = $aMessages[0][1]
-		; listUnreadMessages()
-	; Else
-		; $iNumberOfUnreadMessages = $aMessages[0][1]
-	; EndIf
-	
 	loadAppointments($aAppointments)
 	
 	If IsArray($aAppointments) Then ; if appointments exist
 		For $i = 1 To $aAppointments[0][0]
 			If eventIsHappening($aAppointments[$i][1], $aAppointments[$i][2]) Then
 				postMessage($aAppointments[$i][0])
-				Sleep($iMessageGapTime)
 			EndIf
 		Next
 	EndIf
@@ -203,5 +151,4 @@ While True
 	Sleep(250) ; reduce CPU usage
 WEnd
 
-; TODO: list unread messages whenever the number of unread messages increases
-;       prevent this constant checking from interrupting taskbar thumbnail preview
+; TODO: add specific pause length for each character when posting string to LED board
