@@ -22,14 +22,6 @@
 #include <Outlook.au3>   ; for _OutlookOpen and _OutlookGetAppointments
 #include <String.au3>    ; for _StringInsert
 
-; Function Name..:  eventIsHappening()
-; Description....:  Indicate if current time lies within event times
-; Syntax.........:  eventIsHappening($sStart, $sEnd)
-; Parameter(s)...:  $sStart - String of event start time, format YYYYMMDDHHMMSS
-;                   $sEnd   - String of event end time, format YYYYMMDDHHMMSS
-; Requirement(s).:  String and Date libraries
-; Return Value(s):  On Success - Returns True
-;                   On Failure - Returns False
 Func eventIsHappening($sStart, $sEnd)
 	; Reverse order so indexes don't get affected by the resulting index shifting
 	$sStart = _StringInsert($sStart, ":", 12)
@@ -64,45 +56,55 @@ Func eventIsHappening($sStart, $sEnd)
 	Return False
 EndFunc
 
-; Function Name..:  postMessage()
-; Description....:  Scroll a message on the LED board and then delete it after it has passed once
-; Syntax.........:  postMessage($sMessage)
-; Parameter(s)...:  $sMessage - String of message to have scrolled across board
-; Requirement(s).:  LEDDisplayControllerGui.exe must be in script directory and the server must currently be running
-;                   LEDDisplayControllerGui.exe must be in the C: drive
-; Return Value(s):  None
-Func postMessage($sMessage)
-	Local $iMessageGapTime = 1000 ; in milliseconds
-	Local $iMillisecondsPerCharacter = 400 ; in milliseconds
-	Local $iCharactersInString = StringLen($sMessage)
-	;Local $iSpecialCharactersInString = StringLen(StringRegExpReplace($sMessage, "[\w\h]", "")) ; Needs more work for specific characters
-	
-	; -SetRepeatCount and -DeleteMsgAfterRepeat don't work, so the Sleep function and -DeleteRegex is necessary
-	Run("LedDisplayControllerGui.exe -NoServer -NoGui -SetRepeatCount 1 -DeleteMsgAfterRepeat 1 -SendText """ & $sMessage & """")
-	Local $iWaitTime = $iMillisecondsPerCharacter*($iCharactersInString); + 1/2*$iSpecialCharactersInString)
-	Sleep($iWaitTime)
-	Run("LedDisplayControllerGui.exe -NoServer -NoGui -DeleteRegex """"")
-	Sleep($iMessageGapTime)
+Func allEventsHappening(ByRef $aAppointments)
+	If IsArray($aAppointments) Then ; if appointments exist
+		For $i = 1 To $aAppointments[0][0]
+			; For all appointments, replace location with boolean representing if the event is happening
+			$aAppointments[$i][3] = eventIsHappening($aAppointments[$i][1], $aAppointments[$i][2])
+		Next
+	EndIf
 EndFunc
 
-; Function Name..:  loadAppointments()
-; Description....:  Open an outlook object and put the appointment details in the passed array
-; Syntax.........:  loadAppointments($aAppointments)
-; Parameter(s)...:  $aAppointments - Array to place appointment details in
-; Requirement(s).:  Outlook UDF (https://www.autoitscript.com/forum/topic/89321-outlook-udf/) and Date libraries
-; Return Value(s):  None
+Func changesToAppointmentsArrays($aAppointments, $aLastAppointments)
+	Local $bChanged = False
+	
+	If IsArray($aAppointments) And Not IsArray($aLastAppointments) Then
+		$bChanged = True
+	ElseIf Not IsArray($aAppointments) And IsArray($aLastAppointments) Then
+		$bChanged = True
+	Else
+		If $aAppointments[0][0] == $aLastAppointments[0][0] Then
+			For $i = 1 To $aAppointments[0][0]
+				For $j = 0 To 7
+					If $aAppointments[$i][$j] <> $aLastAppointments[$i][$j] Then
+						$bChanged = True
+					EndIf
+				Next
+				; MsgBox(0, "", $aAppointments[$i][0])
+			Next
+		Else
+			$bChanged = True
+		EndIf
+	EndIf
+	
+	Return $bChanged
+EndFunc
+
+Func startMessage($sMessage)
+	; -SetRepeatCount and -DeleteMsgAfterRepeat don't work, so the Sleep function and -DeleteRegex is necessary
+	Run("LedDisplayControllerGui.exe -NoServer -NoGui -SetRepeatCount 1 -DeleteMsgAfterRepeat 1 -SendText """ & $sMessage & "  """)
+EndFunc
+
+Func stopMessages()
+	Run("LedDisplayControllerGui.exe -NoServer -NoGui -DeleteRegex """"")
+EndFunc
+
 Func loadAppointments(ByRef $aAppointments)
 	Local $oOutlook = _OutlookOpen()
 	Local $sDate = @YEAR & "-" & @MON & "-" & @MDAY ; current date in YYYY-MM-DD format
 	$aAppointments = _OutlookGetAppointments($oOutlook, "", $sDate & " 00:00", _DateAdd('d', 1, $sDate) & " 00:00", "", 2, "")
 EndFunc
 
-; Function Name..:  forceQuitAllProcesses()
-; Description....:  Force quit all processes of a certain name
-; Syntax.........:  forceQuitAllProcesses($sProcessName)
-; Parameter(s)...:  $sProcessName - String of the process name to quit
-; Requirement(s).:  None
-; Return Value(s):  None
 Func forceQuitAllProcesses($sProcessName)
 	Local $aProcesses = ProcessList($sProcessName)
 	For $i = 0 To UBound($aProcesses) - 1
@@ -110,12 +112,6 @@ Func forceQuitAllProcesses($sProcessName)
 	Next
 EndFunc
 
-; Function Name..:  restartScript()
-; Description....:  Runs the current version of this script and exits (https://gist.github.com/kissgyorgy/4350758)
-; Syntax.........:  restartScript()
-; Parameter(s)...:  None
-; Requirement(s).:  This script should be in the C: drive so the command line can reach it
-; Return Value(s):  None
 Func restartScript()
     If @Compiled = 1 Then
         Run(FileGetShortName(@ScriptFullPath))
@@ -126,7 +122,8 @@ Func restartScript()
     Exit
 EndFunc
 
-Local $aAppointments
+Local $aAppointments, $aLastAppointments
+loadAppointments($aAppointments)
 
 HotKeySet("^!r", "restartScript") ; set Ctrl + Alt + R as the hotkey to restart the script
 
@@ -140,15 +137,22 @@ While True
 	
 	loadAppointments($aAppointments)
 	
-	If IsArray($aAppointments) Then ; if appointments exist
-		For $i = 1 To $aAppointments[0][0]
-			If eventIsHappening($aAppointments[$i][1], $aAppointments[$i][2]) Then
-				postMessage($aAppointments[$i][0])
-			EndIf
-		Next
+	allEventsHappening($aAppointments)
+	
+	If changesToAppointmentsArrays($aAppointments, $aLastAppointments) Then
+		stopMessages()
+		
+		If IsArray($aAppointments) Then ; if appointments exist
+			Sleep(100)
+			For $i = 1 To $aAppointments[0][0]
+				If $aAppointments[$i][3] Then ; if appointment is happening
+					startMessage($aAppointments[$i][0])
+				EndIf
+			Next
+		EndIf
 	EndIf
+	
+	$aLastAppointments = $aAppointments
 	
 	Sleep(250) ; reduce CPU usage
 WEnd
-
-; TODO: add specific pause length for each character when posting string to LED board
