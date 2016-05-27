@@ -13,7 +13,6 @@
 
 ; Script Start - Add your code below here
 #include <ExtMsgBox.au3> ; for _ExtMsgBoxSet and _ExtMsgBox
-#include <Notify.au3>    ; for _Notify_Locate, _Notify_Set, and _Notify_Show
 #include <Outlook.au3>   ; for _OutlookOpen and OutlookGetMail
 #include <String.au3>    ; for _StringRepeat
 
@@ -40,30 +39,31 @@ Func listUnreadMessages()
 	Local $sMessage = "Unread mail:" & @LF
 	loadUnreadMessages($aMessages)
 	
-	If $aMessages[0][1] == 0 Then
-		$sMessage &= @LF & "No unread messages"
+	If IsArray($aMessages) Then
+		If $aMessages[0][1] == 0 Then
+			$sMessage &= @LF & "No unread messages"
+		Else
+			Local $iLongestNameLength = 0
+			
+			; Find longest name length for formatting purposes
+			For $i = 1 To $aMessages[0][1]
+				If $iLongestNameLength < StringLen($aMessages[$i][0]) Then
+					$iLongestNameLength = StringLen($aMessages[$i][0])
+				EndIf
+			Next
+			
+			; Adds together name and subject strings with space padding for different sized names
+			For $i = 1 To $aMessages[0][1]
+				$sMessage &= @LF & "- " & $aMessages[$i][0] & _StringRepeat(" ", $iLongestNameLength - StringLen($aMessages[$i][0])) & " -> " & $aMessages[$i][7]
+			Next
+		EndIf
 	Else
-		Local $iLongestNameLength = 0
-		
-		; Find longest name length for formatting purposes
-		For $i = 1 To $aMessages[0][1]
-			If $iLongestNameLength < StringLen($aMessages[$i][0]) Then
-				$iLongestNameLength = StringLen($aMessages[$i][0])
-			EndIf
-		Next
-		
-		; Adds together name and subject strings with space padding for different sized names
-		For $i = 1 To $aMessages[0][1]
-			$sMessage &= @LF & "- " & $aMessages[$i][0] & _StringRepeat(" ", $iLongestNameLength - StringLen($aMessages[$i][0])) & " -> " & $aMessages[$i][7]
-		Next
+		$sMessage &= @LF & "No unread messages"
 	EndIf
 	
 	_ExtMsgBoxSet(-1, -1, -1, -1, -1, "Courier New")
 	_ExtMsgBox(0, 0, "Unread Mail", $sMessage)
 	WinSetOnTop("Unread Mail", $sMessage, 1)
-	; _Notify_Locate()
-	; _Notify_Set(0, -1, -1, "Courier New")
-	; _Notify_Show(0, "Unread Mail", $sMessage)
 EndFunc
 
 HotKeySet("^!u", "listUnreadMessages") ; set Ctrl + Alt + U as the hotkey to list unread messages
@@ -74,11 +74,13 @@ Local $aMessages, $iNumberOfUnreadMessages
 While True
 	loadUnreadMessages($aMessages)
 	
-	If $iNumberOfUnreadMessages < $aMessages[0][1] Then
-		$iNumberOfUnreadMessages = $aMessages[0][1]
-		listUnreadMessages()
-	Else
-		$iNumberOfUnreadMessages = $aMessages[0][1]
+	If IsArray($aMessages) Then
+		If $iNumberOfUnreadMessages < $aMessages[0][1] Then
+			$iNumberOfUnreadMessages = $aMessages[0][1]
+			listUnreadMessages()
+		Else
+			$iNumberOfUnreadMessages = $aMessages[0][1]
+		EndIf
 	EndIf
 	
 	Sleep(250) ; reduce CPU usage
